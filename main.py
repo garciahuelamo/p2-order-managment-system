@@ -8,6 +8,9 @@ class Product:
         self.value = value 
         self.right = None 
         self.left = None 
+    
+    def to_json(self):
+        return {"id": self.key, "value": self.value}
 
 class BSTProducts:
     def __init__(self):
@@ -61,6 +64,10 @@ class Order:
         self.id = id
         self.products = products
         self.next = None
+    
+    def to_json(self):
+        products_dict = [{"product_id": p["product_id"], "quantity": p["quantity"]} for p in self.products]
+        return {"order_id": self.id, "products": products_dict}
 
 class LLOrders:
     def __init__(self): 
@@ -129,10 +136,10 @@ def search(id):
 @app.route("/add_order", methods=["POST"])
 def add_order():
     data = request.get_json()
-
+    
     try:
         order_id = int(data["id"])
-        products = data.get("products", [])
+        products = data["products"]
 
         if not isinstance(products, list):
             return jsonify({"error": "The 'products' field must be a list"}), 400
@@ -141,10 +148,7 @@ def add_order():
 
         for item in products:
             if not isinstance(item, dict):
-                return jsonify({
-                    "error": "Each item in 'products' must be a dictionary with 'product_id' and 'quantity'.",
-                    "invalid_item": item
-                }), 400
+                return jsonify({"error": "Each item in 'products' must be a dictionary"}), 400
 
             if "product_id" not in item or "quantity" not in item:
                 return jsonify({"error": "Each product must contain 'product_id' and 'quantity'"}), 400
@@ -153,17 +157,14 @@ def add_order():
             quantity = int(item["quantity"])
 
             product_value = bst._search(bst.root, product_id)
-
             if product_value is None:
                 return jsonify({"error": f"Product with ID {product_id} does not exist"}), 400
 
+            product = Product(product_id, product_value)
             order_products.append({"product_id": product_id, "quantity": quantity})
 
         linkedlist.add(order_id, order_products)
-
-        print(f"Added order {order_id}: {order_products}")
-
-        return jsonify({"message": "Order added successfully!", "order": order_products}), 200
+        return jsonify({"message": "Order added successfully!"}), 200
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -175,13 +176,9 @@ def get_orders():
     orders = []
     current = linkedlist.head
 
-    print("Fetching orders...")
-
     while current:
-        orders.append({"order_id": current.id, "products": current.products})
+        orders.append(current.to_json())
         current = current.next
-
-    print(f"Orders: {orders}")
 
     return jsonify({"orders": orders}), 200
 
@@ -192,6 +189,58 @@ def search_order(id):
         return jsonify({"message": "Order found", "order_id": id, "products": order_data}), 200
     else:
         return jsonify({"error": "Order not found"}), 404
+    
+@app.route("/update_order", methods=["PUT"])
+def update_order():
+    data = request.get_json()
 
+    try:
+        order_id = int(data["id"])
+        new_products = data["products"]
+
+        if not isinstance(new_products, list):
+            return jsonify({"error": "The 'products' field must be a list"}), 400
+
+        for item in new_products:
+            if not isinstance(item, dict):
+                return jsonify({"error": "Each item in 'products' must be a dictionary"}), 400
+            if "product_id" not in item or "quantity" not in item:
+                return jsonify({"error": "Each product must contain 'product_id' and 'quantity'"}), 400
+            
+            product_id = int(item["product_id"])
+            quantity = int(item["quantity"])
+
+            product_value = bst._search(bst.root, product_id)
+            if product_value is None:
+                return jsonify({"error": f"Product with ID {product_id} does not exist"}), 400
+
+        current = linkedlist.head
+        order_found = False
+        while current:
+            if current.id == order_id:
+                current.products = new_products
+                order_found = True
+                break
+            current = current.next
+
+        if not order_found:
+            return jsonify({"error": f"Order with ID {order_id} not found"}), 404
+        return jsonify({"message": "Order updated successfully!", "order": {"id": order_id, "products": new_products}}), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except KeyError:
+        return jsonify({"error": "Missing 'id' or 'products' in request"}), 400
+
+@app.route("/delete_order/<int:id>", methods=["DELETE"])
+def delete_order(id):
+    linkedlist.delete(id)
+
+    order_data = linkedlist.find(id)
+    if order_data is None:
+        return jsonify({"message": f"Order with ID {id} deleted successfully!"}), 200
+    else:
+        return jsonify({"message": "Failed to delete order, it wasn't found"}), 404
+    
 if __name__ == "__main__":
     app.run(debug=True)
